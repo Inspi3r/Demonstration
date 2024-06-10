@@ -79,7 +79,7 @@ no ip forwarding
 	Далее переходим в настройку isc-dhcp-server
 	nano /etc/default/isc-dhcp-server
 	Убираем # в строке DHCPDv4_CONF
-	В строке INTERFACESv4 добавляем в ковычки внутренний адрес, который направлен на сервер
+	В строке INTERFACESv4 добавляем в ковычки внутренний интерфейс, который направлен на сервер
 ---------------------------------------------------------------------------------------------------------------
 |Добавление пользователей|
 	useradd -c "Admin" admin -U -s bim/bash		### Добавляем пользака с группой и возможностью работы в командной строке
@@ -193,10 +193,122 @@ chronyc sources
 chronyc clients
 
 ************************************
-И снова перед началом настройки DNS необходимо установить FreeIPA сервер на HQ-SRV
+УРААА DNSSSSS
+apt install bind9
 
-Устанавливаем имя сервера на доменное 
-hostnamectl set-hostname hq-srv.hq.work
+Создадим директории для зон:
+mkdir /etc/bind/hq.work -p
+mkdir /etc/bind/br.work -p
+
+Переходим в /etc/bind
+Создаем конфигурационный файл наших зон.
+touch named.conf.zones
+Открываем, пишем зоны hq.work, br.work
+*****************************************
+zone "hq.work" {
+type master;
+file "/etc/bind/hq.work/hq.db";
+};
+
+zone 1.168.192.in-addr.arpa {
+type master;
+file "/etc/bind/hq.work/hq-back.zone";
+};
+
+zone "br.work" {
+type master;
+file "/etc/bind/br.work/br.db";
+};
+
+zone 1.16.172.in-addr.arpa {
+type master;
+file "/etc/bind/br.work/br-back.zone";
+};
+******************************************
+Далее открываем named.conf и добавляем путь до нашего файла после всех строк:
+include "/etc/bind/named.conf.zones";
+
+Следующим открываем named.conf.options
+вписываем до последней скобки 
+dnssec-validation no
+
+listen-on { any; };
+listen-on-v6 { none; };
+
+Копируем db.empty в /hq.work с названием hq.db
+полная команда: 
+
+cp /etc/bind/db.empty /etc/bind/hq.work/hq.db
+
+cd hq.work
+nano hq.db
+
+Открываем и начинаем править:
+
+Выше строчки $TTL пишем $ORIGIN hq.work.
+Далее
+@	IN	SOA	HQ-SRV.	root.HQ-SRV. (
+			1	; Serial
+			-	-
+			- 	-
+;
+@	IN	NS	HQ-SRV.
+@	IN	A	192.169.1.2
+HQ-SRV	IN	A	192.168.1.2
+HQ-R	IN	A	192.168.1.1
+
+Далее обратная зона просмотра
+cp hq.db hq-back.zone
+
+Редачим:
+Выше строчки $TTL пишем $ORIGIN 1.168.192.in-addr.arpa.
+@	IN	SOA	HQ-SRV.	root.HQ-SRV. (
+			1	; Serial
+			-	-
+			- 	-
+;
+		NS	HQ-SRV.
+2		PTR	HQ-SRV.
+1		PTR	HQ-R.
+
+После копируем эти 2 файла hq.db и hq-back.zone в папку br.work с переименованием их
+cp /etc/bind/hq.work/hq.db /etc/bind/br.work/br.db
+cp /etc/bind/hq.work/hq-back.zone /etc/bind/br.work/br-back.zone
+И редачим их
+
+br.db:
+@	IN	SOA	BR-SRV.	root.BR-SRV. (
+			1	; Serial
+			-	-
+			- 	-
+;
+@	IN	NS	BR-SRV.
+@	IN	A	172.16.1.2
+BR-SRV	IN	A	172.16.1.2
+BR-R	IN	A	172.16.1.1
+
+br-back.zone:
+@	IN	SOA	BR-SRV.	root.BR-SRV. (
+			1	; Serial
+			-	-
+			- 	-
+;
+		NS	BR-SRV.
+2		PTR	BR-SRV.
+1		PTR	BR-R.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
