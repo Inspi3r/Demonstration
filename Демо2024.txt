@@ -74,7 +74,7 @@ no ip forwarding
 	}
 	host HQ-SRV {
 		hardware ethernet MAC-адрес сетевой карты сервера
-		fixed-adress 192.168.1.2
+		fixed-address 192.168.1.2
 
 	Далее переходим в настройку isc-dhcp-server
 	nano /etc/default/isc-dhcp-server
