@@ -1,0 +1,199 @@
+|Меняем HOSTNAME|
+	hostnamectl set-hostname <NAME> 		### Задаём имя
+
+	exec bash					### Перезапускаем командную строку для отображения нового имени
+---------------------------------------------------------------------------------------------------------------
+|Делаем таблицу адресации|
+Калькулятор для IPv4 - https://ipcalc.co/
+Калькулятор для IPv6 - https://www.coderstool.com/ipv6-subnet-calculator (пример IPv6 адреса - FD24:192::/122)
+Адреса произвольные
+---------------------------------------------------------------------------------------------------------------
+|Включаем режим маршрутизатора на маршрутизаторах|
+	nano /etc/sysctl.conf	
+			
+	net.ipv4.ip_forward=1
+
+	net.ipv6.conf.all.forwarding=1
+
+	sysctl -p
+
+РЕПО ЯНДЕКСА!!!
+deb http://mirror.yandex.ru/debian/ bullseye main
+deb-src http://mirror.yandex.ru/debian/ bullseye main
+
+deb http://mirror.yandex.ru/debian-security bullseye-security main contrib
+deb-src http://mirror.yandex.ru/debian-security bullseye-security main contrib
+
+deb http://mirror.yandex.ru/debian/ bullseye-updates main contrib
+deb-src http://mirror.yandex.ru/debian/ bullseye-updates main contrib
+---------------------------------------------------------------------------------------------------------------
+|Проверка выхода в интернет и установка nftables на HQ-R и BR-R и ISP|
+	apt install -y nftables
+
+	nano /etc/nftables.conf						### Создаем и открываем фалй
+
+		table inet nat {					### Пишем следующие строчки в файл
+        	chain POSTROUTING {
+        	type nat hook postrouting priority srcnat;
+        	oifname "ВНЕШНИЙ ПОРТ СМОТРЯЩИЙ НА ИНТЕРНЕТ" masquerade
+
+******************** Чтобы сервера начали выходить в интернет надо настроить динамическую маршрутизацию OSPF, 
+так как она проста в настройке и имеет большой потенциал к расширению сети.
+
+apt install frr		### Установка FRR (для маршрутизаци OSPF)
+nano /etc/frr/daemons 	### Переходим в файл daemons и пишем YES напротив строки ospfd
+	ДАЛЕЕ ДЕЛАЕМ ВСЁ СОГЛАСНО ВАШИМ IP
+vtysh	### Переход в среду cisco
+conf t
+router ospf
+router-id (поочередно id каждого роутера, начиная с 1.1.1.1)
+network 10.10.10.0/27 area 0
+***И ТАК ДАЛЕЕ ПЕРЕЧИСЛЕНИЕ ВСЕХ СЕТЕЙ КОТОРЫЕ ПОДКЛЮЧЕНЫ К УСТРОЙСТВУ (HQ-R - 2 сети, ISP - 3 сети, BR-R - 2 сети)
+do wr 
+
+Проделываем эти команды на всех трёх роутерах. После чего должен появится доступ к интернету и пинг с сервера до сервера.
+---------------------------------------------------------------------------------------------------------------
+|Настройка DHCP на HQ-R|
+
+	apt install isc-dhcp-server	### Установка dhcp сервера
+
+	nano /etc/dhcp/dhcpd.conf	### Переход в настройки DHCP сервера
+
+	В файле в любом месте пишем:
+	subnet 192.168.1.0 netmask 255.255.255.224 {
+		range 192.168.1.3 192.168.1.30;
+		option domain-name-servers 192.168.1.2, 8.8.8.8;
+		option domain-name "hq.work";
+		option routers 192.168.1.1;
+	}
+	host HQ-SRV {
+		hardware ethernet MAC-адрес сетевой карты сервера
+		fixed-adress 192.168.1.2
+
+	Далее переходим в настройку isc-dhcp-server
+	nano /etc/default/isc-dhcp-server
+	Убираем # в строке DHCPDv4_CONF
+	В строке INTERFACESv4 добавляем в ковычки внутренний адрес, который направлен на сервер
+---------------------------------------------------------------------------------------------------------------
+|Добавление пользователей|
+	useradd -c "Admin" admin -U -s bim/bash		### Добавляем пользака с группой и возможностью работы в командной строке
+	passwd admin
+	< вводим пароль пользователя >
+	< повторяем ввод пароля >
+---------------------------------------------------------------------------------------------------------------
+|Тестирование узлов с помощью iperf3 HQ-R и ISP|
+	apt install iperf3 -y	### На обоих узлах
+	iperf3 -s		### Запуск iperf на одном из узлов в качетсве сервера
+	iperf3 -c АДРЕС ISP	### Тестирование
+---------------------------------------------------------------------------------------------------------------
+|Создание backup скрипта на HQ-R и BR-R|
+	mkdir /var/{backup,backup-script}	### Создание папки для хранения скрипта и для хранения резервных копий
+	nano /var/backup-script/backup.sh	### Создание скрипта
+*****************************************
+	Пишем следующие строчки в скрипт:
+#!/bin/bash
+
+# Системная переменная с текущей датой
+data=$(date +%d.%m.%Y-%H:%M:%S)
+# Создание директории с текущей датой/временем
+mkdir /var/backup/$data
+# Копирование  настроек frr
+cp -r /etc/frr /var/backup/$data
+# Копирование настроек nftables
+cp -r /etc/nftables /var/backup/$data
+# Копирование настроек сетевых интерфейсов
+cp -r /etc/NetworkManager/system-connections /var/backup/$data
+# Копирование настроек DHCP
+cp -r /etc/dhcp /var/backup/$data
+# Переход  в директорию
+cd /var/backup
+# Архивируем
+tar czfv "./$data.tar.gz" ./$data
+# Удаляем временную директорию
+rm -r /var/backup/$data
+*****************************************
+chmod +x /var/backup-script/backup.sh	### Назначаем исполняемым наш скрипт
+/var/backup-script/backup.sh		### Выполняем скрипт
+*****************************************
+Чтобы передать этот же скрипт на BR-R потребуется установить SSH и настроить его
+	apt install sshd
+	nano /etc/ssh/sshd_config
+В строке PermitRootLogin убираем # с напротив пишем yes (ПРОДЕЛАТЬ НА ВСЕХ МАШИНАХ, ГДЕ ЕСТЬ SSH, А ОН ЕСТЬ ВЕЗДЕ)
+	systemctl restart sshd
+*****************************************
+Далее на BR-R передаём файл с помощью scp:
+
+scp root@АДРЕС HQ-R:/var/backup-script/backup.sh /var/backup-script/
+chmod +x /var/backup-script/backup.sh	### Делаем скрипт исполняемым
+/var/backup-script/backup.sh		### Выполняем скрипт
+---------------------------------------------------------------------------------------------------------------
+|Настройка SSH, перенаправление трафика SSH на внешний порт HQ-R|
+nano /etc/ssh/sshd_config	### Меняем нужный порт у HQ-SRV. Строка Port. Также строчку PermitRootLogin.
+
+Переходим к настройке перенаправления трафика на HQ-R.
+	nano /etc/nftables.conf
+ПЕРЕД НАСТРОЙКОЙ NAT ПИШЕМ СЛЕДУЮЩИЕ СТРОЧКИ
+chain PREROUTING {
+        type nat hook prerouting priority filter;
+        ip daddr 1.1.1.2 tcp dport 3035(в зависимости от варианта) dnat ip to 192.168.1.2:3035 (в зависимости от ip и варианта)
+}
+
+systemctl restart nftables	### Рестарт nftables
+---------------------------------------------------------------------------------------------------------------
+|Запрет доступа ssh CLI до сервера HQ-SRV|
+Устанавливаем nftables на HQ-SRV
+apt install nftables
+
+В конфиге nftables пишем:
+
+table inet filter {
+            chain input {
+            type filter hook input priority filter;
+            ip saddr 10.10.10.2/30 tcp dport 3035 counter drop		### ВСЕ IP И ПОРТЫ ЗАВИСЯТ ОТ ВАРИАНТА
+            }
+}
+---------------------------------------------------------------------------------------------------------------
+************************************************
+p.s. Далее в задании DNS, но надо сделать NTP, чтобы всё было круто с DNS
+
+На HQ-R проверяем часовой пояс
+timedatесtl		### Проверка времени
+Задаём часовой пояс МСК
+timedatесtl set-timezone Europe/Moscow
+
+Устанавливаем chrony
+apt install chrony
+
+В конфиге (/etc/chrony/chrony.conf) пишем:
+server 127.0.0.1 iburst prefer
+local stratum 5
+allow 0/0
+
+Далее сомотрим, правильно ли всё
+systemctl restart chrony
+chronyc sources
+systemctl enable chrony
+
+На всех тачках устанавливаем часовой пояс
+timedatectl set-timezone Europe/Moscow
+
+И кидаем в автозагрузку хорни
+systemctl enable --now chrony
+
+Проверяем на клиентах
+chronyc sources
+
+Проверяем на серваке HQ-R
+chronyc clients
+
+************************************
+И снова перед началом настройки DNS необходимо установить FreeIPA сервер на HQ-SRV
+
+Устанавливаем имя сервера на доменное 
+hostnamectl set-hostname hq-srv.hq.work
+
+
+
+
+
+						
