@@ -7,6 +7,8 @@
 Калькулятор для IPv4 - https://ipcalc.co/
 Калькулятор для IPv6 - https://www.coderstool.com/ipv6-subnet-calculator (пример IPv6 адреса - FD24:192::/122)
 Гайд - https://github.com/abdurrah1m/DEMO2024/blob/main/DEBIAN.md
+Гайд 2 - http://каб-220.рф/ru/demo-2024/modul-2-2
+Гайд 3 - https://vxsetup.tilda.ws/
 Адреса произвольные
 ---------------------------------------------------------------------------------------------------------------
 |Включаем режим маршрутизатора на маршрутизаторах|
